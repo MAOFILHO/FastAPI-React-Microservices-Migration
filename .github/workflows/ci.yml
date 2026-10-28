@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install root dev tooling and common
+        run: |
+          pip install -e services/common -e ".[dev]"
+      - name: Lint
+        run: ruff check services/
+      - name: Test common
+        run: pytest services/common
+      # Each service gets its own venv: every service has a top-level package named `app`.
+      - name: Test services
+        run: |
+          for name in sum-service mul-service monolith history-service gateway; do
+            echo "::group::$name"
+            python -m venv "services/$name/.venv"
+            "services/$name/.venv/bin/pip" install -q -e services/common -e "services/$name" pytest pytest-asyncio respx
+            "services/$name/.venv/bin/pytest" "services/$name"
+            echo "::endgroup::"
+          done
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
